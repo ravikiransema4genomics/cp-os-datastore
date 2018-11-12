@@ -1,0 +1,4 @@
+dependencies:
+  - name: oncsuite-svc
+    version: 1.0.0
+    repository: https://oncsuite-helm-charts.storage.googleapis.com/

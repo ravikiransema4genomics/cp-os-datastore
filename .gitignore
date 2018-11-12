@@ -1,0 +1,14 @@
+# Compiled class file
+*.class
+
+# Log file
+*.log
+
+/target/
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+.sonar*
+.scanner*

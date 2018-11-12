@@ -1,0 +1,190 @@
+version: 2
+jobs:
+   build:
+     working_directory: ~/build
+     machine:
+        image: circleci/classic:edge
+     environment:
+        BUILD_ENV: test
+     steps:
+        - checkout:
+            path: $CIRCLE_PROJECT_REPONAME
+        - run:
+             name: Authenticate GCloud Image Registry
+             shell: /bin/bash
+             command: |
+                echo $GCLOUD_SERVICE_KEY | base64 --decode --ignore-garbage > ${HOME}/gcloud-service-key.json
+                sudo /opt/google-cloud-sdk/bin/gcloud --quiet components update
+                sudo /opt/google-cloud-sdk/bin/gcloud auth activate-service-account --key-file ${HOME}/gcloud-service-key.json
+                sudo /opt/google-cloud-sdk/bin/gcloud config set project ${GCLOUD_PROJECT_ID}
+                sudo chown "$USER":"$USER" /usr/bin/docker -R
+                sudo chmod g+rwx "/usr/bin/docker" -R
+                docker login -u _json_key --password-stdin https://gcr.io < ${HOME}/gcloud-service-key.json
+        - run:
+             name: Build cp-os-datastore
+             shell: /bin/bash
+             command: |
+                cd ~
+                cp build/$CIRCLE_PROJECT_REPONAME/cp-os-notification-service-impl/build.sh build
+                cp build/$CIRCLE_PROJECT_REPONAME/cp-os-notification-service-impl/config.sh build
+                cd build
+                chmod +x build.sh
+                ./build.sh
+        - run:
+             name: Push to GCloud Image Registry
+             shell: /bin/bash
+             command: |
+                docker tag cp-os-datastore gcr.io/${GCLOUD_PROJECT_ID}/cp-os-datastore:$CIRCLE_SHA1
+                docker push gcr.io/${GCLOUD_PROJECT_ID}/cp-os-datastore:$CIRCLE_SHA1                
+   deploy-dev:
+     working_directory: ~/build
+     machine:
+        image: circleci/classic:edge
+     steps:
+        - checkout:
+            path: $CIRCLE_PROJECT_REPONAME
+        - run:
+             name: Deploy to Dev
+             shell: /bin/bash
+             command: |
+                cd ~/build
+                export SERVICE_KEY=$GCLOUD_SERVICE_KEY
+                export PROJECT_ID=$GCLOUD_PROJECT_ID
+                export CLUSTER_NAME=$GCLOUD_CLUSTER_NAME
+                export CLUSTER_ZONE=$GCLOUD_CLUSTER_ZONE
+
+                chmod +x ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh dev
+                
+                kubectl rollout status deployment/$CIRCLE_PROJECT_REPONAME
+                
+   deploy-test:
+     working_directory: ~/build
+     machine:
+        image: circleci/classic:edge
+     steps:
+        - checkout:
+            path: $CIRCLE_PROJECT_REPONAME
+        - run:
+             name: Deploy to Test
+             shell: /bin/bash
+             command: |
+                cd ~/build
+                export SERVICE_KEY=$GCLOUD_SERVICE_KEY
+                export PROJECT_ID=$GCLOUD_PROJECT_ID
+                export CLUSTER_NAME=$GCLOUD_CLUSTER_NAME
+                export CLUSTER_ZONE=$GCLOUD_CLUSTER_ZONE
+
+                chmod +x ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh test
+                
+                kubectl rollout status deployment/$CIRCLE_PROJECT_REPONAME
+                  
+   deploy-stage:
+     working_directory: ~/build
+     machine:
+        image: circleci/classic:edge
+     steps:
+        - checkout:
+            path: $CIRCLE_PROJECT_REPONAME
+        - run:
+             name: Deploy to STAGE
+             shell: /bin/bash
+             command: |
+                cd ~/build
+                export SERVICE_KEY=$GCLOUD_SERVICE_KEY
+                export PROJECT_ID=$GCLOUD_PROJECT_ID
+                export CLUSTER_NAME=$GCLOUD_CLUSTER_NAME
+                export CLUSTER_ZONE=$GCLOUD_CLUSTER_ZONE
+
+                chmod +x ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh stage
+                
+                kubectl rollout status deployment/$CIRCLE_PROJECT_REPONAME
+
+   deploy-production:
+     working_directory: ~/build
+     machine:
+        image: circleci/classic:edge
+     steps:
+        - checkout:
+            path: $CIRCLE_PROJECT_REPONAME
+        - run:
+             name: Deploy to Production
+             shell: /bin/bash
+             command: |
+                cd ~/build
+                export SERVICE_KEY=$GCLOUD_SERVICE_KEY
+                export PROJECT_ID=$GCLOUD_PROJECT_ID
+                export CLUSTER_NAME=$GCLOUD_CLUSTER_NAME
+                export CLUSTER_ZONE=$GCLOUD_CLUSTER_ZONE
+
+                chmod +x ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/cluster.sh
+                ${HOME}/build/$CIRCLE_PROJECT_REPONAME/helm/deploy.sh prod
+                
+                kubectl rollout status deployment/$CIRCLE_PROJECT_REPONAME
+
+
+workflows:
+  version: 2
+  build_and_deploy:
+    jobs:
+    - build:
+        filters:
+          tags:
+            only: /^v3.*/
+    - deploy-dev-approval:
+        type: approval
+        requires:
+        - build
+    - deploy-test-approval:
+        filters:
+          branches:
+            only: master
+        type: approval
+        requires:
+        - build
+    - deploy-stage-approval:
+        type: approval
+        requires:
+        - build
+        filters:
+          tags:
+            only: /^v3.*/
+          branches:
+            ignore: /.*/
+    - deploy-production-approval:
+        type: approval
+        requires:
+        - build
+        filters:
+          tags:
+            only: /^v3.*/
+          branches:
+            ignore: /.*/
+    - deploy-dev:
+        requires:
+        - deploy-dev-approval
+    - deploy-test:
+        requires:
+        - deploy-test-approval
+    - deploy-stage:
+        requires:
+        - deploy-stage-approval
+        filters:
+          tags:
+            only: /^v3.*/
+          branches:
+            ignore: /.*/
+    - deploy-production:
+        requires:
+        - deploy-production-approval
+        filters:
+          tags:
+            only: /^v3.*/
+          branches:
+            ignore: /.*/

@@ -1,0 +1,22 @@
+oncsuite-svc:
+  name: cp-os-datastore
+  replicas: 1
+  type: service
+  imageRegistry: gcr.io/s4-oncsuite-dev-181912
+  container:
+    port: 9090
+  nodeSelector:
+    type: service
+  volumes:
+      -
+        name: cloud-kms
+        secret:
+          secretName: cloudkms-key
+  volumeMounts:
+      -
+        mountPath: /secrets/kms
+        name: cloud-kms
+  env:
+     -
+       name: GOOGLE_APPLICATION_CREDENTIALS
+       value: /secrets/kms/cloudkms.json
